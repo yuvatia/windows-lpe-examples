@@ -1,16 +1,6 @@
 #pragma once
 #include <Windows.h>
-
-typedef struct _EPROCESS {
-	unsigned long UniqueProcessId;
-	_LIST_ENTRY ActiveProcessLinks;
-	void* Token;
-};
-
-typedef struct WRITE_WHAT_WHERE {
-	unsigned long long What;
-	unsigned long long Where;
-};
+#include "ntstructs.h"
 
 
 typedef struct _LARGE_UNICODE_STRING
@@ -98,7 +88,10 @@ typedef struct tagWND {
 	DWORD                field2;
 } WND, *PWND;
 
-const unsigned long WRITE_WHAT_WHERE_IOCTL_CODE = 0x22200B;
 
-typedef __kernel_entry NTSTATUS (NTAPI* NTQUERYINFORMATIONPROCESS)(IN HANDLE ProcessHandle, IN PROCESSINFOCLASS ProcessInformationClass, OUT PVOID ProcessInformation, IN ULONG ProcessInformationLength, OUT PULONG ReturnLength OPTIONAL);
 typedef void* (NTAPI* HMVALIDATEHANDLE)(HWND h, int type);
+typedef void* (NTAPI* NTUSERCONVERTMEMHANDLE)(void* buffer, size_t length);
+
+void* getPebAddress();
+void* leakSurfaceAddress(HBITMAP bmpHandle);
+void* leakUserObjectAddress(void* handle);
