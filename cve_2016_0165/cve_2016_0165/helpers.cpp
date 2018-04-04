@@ -7,7 +7,6 @@
 typedef __kernel_entry NTSTATUS(NTAPI* NTQUERYINFORMATIONPROCESS)(IN HANDLE ProcessHandle, IN PROCESSINFOCLASS ProcessInformationClass, OUT PVOID ProcessInformation, IN ULONG ProcessInformationLength, OUT PULONG ReturnLength OPTIONAL);
 
 void* getPebAddress() {
-	void* peb;
 	PROCESS_BASIC_INFORMATION basicInfo = { 0 };
 	unsigned long returned = 0;
 	NTQUERYINFORMATIONPROCESS NtQueryInformationProcess;

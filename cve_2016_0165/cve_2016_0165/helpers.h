@@ -95,3 +95,5 @@ typedef void* (NTAPI* NTUSERCONVERTMEMHANDLE)(void* buffer, size_t length);
 void* getPebAddress();
 void* leakSurfaceAddress(HBITMAP bmpHandle);
 void* leakUserObjectAddress(void* handle);
+void writeQword(unsigned long long address, void* data);
+unsigned long long readQword(unsigned long long address);
